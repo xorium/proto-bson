@@ -2,12 +2,12 @@ package codec
 
 import (
 	"fmt"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"reflect"
 
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 // ProtobufMongoCodec является адаптером, чтобы реализованные по новой нотоации

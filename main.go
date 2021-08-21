@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
+	"reflect"
+
+	"bitbucket.org/entrlcom/proto-mongo/codec"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
-	"proto-encoder/codec"
-	"reflect"
 )
 
 func main() {

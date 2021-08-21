@@ -2,12 +2,13 @@ package codec
 
 import (
 	"fmt"
+	"log"
+	"reflect"
+
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"log"
-	"reflect"
 )
 
 // protobufMessageCodec кодек для сообщений Protobuf'а.
