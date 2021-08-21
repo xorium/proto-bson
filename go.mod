@@ -1,4 +1,4 @@
-module proto-encoder
+module bitbucket.org/entrlcom/proto-mongo
 
 go 1.16
 
