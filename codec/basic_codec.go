@@ -2,10 +2,11 @@ package codec
 
 import (
 	"fmt"
+	"reflect"
+
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"reflect"
 )
 
 // protobufBasicCodec кодирует/декодирует базовые, фундаментальные типы данных:

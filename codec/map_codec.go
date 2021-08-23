@@ -3,13 +3,14 @@ package codec
 import (
 	"encoding/json"
 	"fmt"
-	"go.mongodb.org/mongo-driver/bson/bsoncodec"
-	"go.mongodb.org/mongo-driver/bson/bsonrw"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"log"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/bson/bsoncodec"
+	"go.mongodb.org/mongo-driver/bson/bsonrw"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 var basicReflectTypesByKind = map[reflect.Kind]reflect.Type{

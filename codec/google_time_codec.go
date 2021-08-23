@@ -2,6 +2,7 @@ package codec
 
 import (
 	"fmt"
+
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/reflect/protoreflect"
