@@ -10,6 +10,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func ReflectTypeAsUsual(msg proto.Message) reflect.Type {
+	return reflect.TypeOf(msg.ProtoReflect().Type())
+}
+
+var ProtobufReflectUsualType = proto.Clone(nil)
+
 // ProtobufMongoCodec является адаптером, чтобы реализованные по новой нотоации
 // кодеки, с новыми сигнатурами, могли удовлетворять интерфейсу bsoncodec.ValueCodec.
 type ProtobufMongoCodec struct {
