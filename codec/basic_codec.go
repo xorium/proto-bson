@@ -11,13 +11,22 @@ import (
 // protobufBasicCodec кодирует/декодирует базовые, фундаментальные типы данных:
 // числовые, числовые с плавающей запятой, строки, массивы из простых типов.
 type protobufBasicCodec struct {
-	registry         *CodecsRegistry
+	// Реестра типов-синонимов, который нужно конвертировать в свой синоним перед
+	// декодированием и кодирова - после. Например, protobuf чилос enum'в в int32
+	// и - обратно.
 	convertableTypes map[reflect.Type]reflect.Type
+	// Реестра более сложных (но все еще не осставных типов, напрпимер, enum'ы.)
+	registry *CodecsRegistry
+	// Контексты приобразования базовых типов для BSON'а.
+	basicEncCtx bsoncodec.EncodeContext
+	basicDecCtx bsoncodec.DecodeContext
 }
 
 func newProtobufBasicCodec(r *CodecsRegistry) *protobufBasicCodec {
 	return &protobufBasicCodec{
-		registry: r,
+		registry:    r,
+		basicEncCtx: DefaultEncContext,
+		basicDecCtx: DefaultDecContext,
 		convertableTypes: map[reflect.Type]reflect.Type{
 			reflect.TypeOf(protoreflect.EnumNumber(0)): reflect.TypeOf(int32(0)),
 		},

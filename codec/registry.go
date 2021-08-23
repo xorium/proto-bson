@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"sync"
 
-	"go.mongodb.org/mongo-driver/bson/bsoncodec"
-	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
@@ -18,22 +16,6 @@ const (
 	ProtobufKindMessage   = "protoreflect.Message"
 	ProtobufKindTimestamp = "google.protobuf.Timestamp"
 )
-
-// ProtoValueEncoder описывает интерфейс энкодера значений Protobuf'а.
-type ProtoValueEncoder interface {
-	EncodeValue(ctx bsoncodec.EncodeContext, w bsonrw.ValueWriter, val protoreflect.Value) error
-}
-
-// ProtoValueDecoder описывает интерфейс энкодера значений Protobuf'а.
-type ProtoValueDecoder interface {
-	DecodeValue(ctx bsoncodec.DecodeContext, w bsonrw.ValueReader, val protoreflect.Value) error
-}
-
-// ProtoValueCodec описывает интерфейс кодека, т.е. кодировщика-декодировщика.
-type ProtoValueCodec interface {
-	ProtoValueEncoder
-	ProtoValueDecoder
-}
 
 // CodecsRegistry - реестр кодеков различных видов значений Protobuf'а.
 // Также помимо обобщенных видов в нем можно регистрировать конкретные типы
@@ -106,7 +88,7 @@ func (r *CodecsRegistry) GetCodecByValue(value protoreflect.Value) (codec ProtoV
 	if !value.IsValid() {
 		return nil, false
 	}
-
+	// TODO: усптростить детект типа значения value protoreflect.Value.
 	isValueMessage := func(val protoreflect.Value) (isMessage bool) {
 		defer func() {
 			if r := recover(); r != nil {
