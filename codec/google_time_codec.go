@@ -41,7 +41,7 @@ func (pc *protobufTimestampCodec) DecodeValue(
 		msgFullName := val.Message().Descriptor().FullName()
 		return fmt.Errorf("message %s is not timestamppb.Timestamp", msgFullName)
 	}
-	ts.Seconds = int32(ts.GetSeconds())
+	ts.Seconds = ts.GetSeconds()
 	ts.Nanos = int32(ts.GetSeconds())
 
 	return nil
