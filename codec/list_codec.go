@@ -28,14 +28,19 @@ func (pc *protobufListCodec) EncodeValue(
 	if err != nil {
 		return err
 	}
+	func() { _ = writer.WriteArrayEnd() }()
 
 	listValue := val.List()
 	if !listValue.IsValid() {
-		return fmt.Errorf("list value %v is invalid", val)
+		log.Printf("list value %v is invalid", val)
+		return nil
 	}
 
 	for i := 0; i < listValue.Len(); i++ {
 		listItem := listValue.Get(i)
+		if !listItem.IsValid() {
+			continue
+		}
 		valueWriter, err := writer.WriteArrayElement()
 		if err != nil {
 			return err
@@ -51,7 +56,7 @@ func (pc *protobufListCodec) EncodeValue(
 		}
 	}
 
-	return writer.WriteArrayEnd()
+	return nil
 }
 
 func (pc *protobufListCodec) DecodeValue(

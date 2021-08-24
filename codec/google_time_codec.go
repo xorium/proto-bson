@@ -24,12 +24,13 @@ func newProtobufTimestampCodec(r *CodecsRegistry) *protobufTimestampCodec {
 func (pc *protobufTimestampCodec) EncodeValue(
 	_ bsoncodec.EncodeContext, w bsonrw.ValueWriter, val protoreflect.Value,
 ) error {
-	ts, ok := val.Message().Interface().(*timestamppb.Timestamp)
-	if !ok {
-		msgFullName := val.Message().Descriptor().FullName()
-		return fmt.Errorf("message %s is not timestamppb.Timestamp", msgFullName)
+	if w == nil || !val.IsValid() {
+		return nil
 	}
-	return w.WriteTimestamp(uint32(ts.Seconds), uint32(ts.Nanos))
+	msg := val.Message().Descriptor()
+	seconds := val.Message().Get(msg.Fields().Get(0)).Interface().(int64)
+	nanos := val.Message().Get(msg.Fields().Get(1)).Interface().(int32)
+	return w.WriteTimestamp(uint32(seconds), uint32(nanos))
 }
 
 func (pc *protobufTimestampCodec) DecodeValue(
