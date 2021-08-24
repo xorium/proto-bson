@@ -106,7 +106,12 @@ func (pc *protobufMapCodec) EncodeValue(
 	if err != nil {
 		return err
 	}
-	defer func() { _ = writer.WriteDocumentEnd() }()
+	defer func() {
+		err = writer.WriteDocumentEnd()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	mapValue := val.Map()
 	if !mapValue.IsValid() {
