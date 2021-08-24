@@ -25,7 +25,7 @@ func (pc *protobufTimestampCodec) EncodeValue(
 	_ bsoncodec.EncodeContext, w bsonrw.ValueWriter, val protoreflect.Value,
 ) error {
 	if w == nil || !val.IsValid() {
-		return nil
+		return fmt.Errorf("nil writer, or invalid value")
 	}
 	msg := val.Message().Descriptor()
 	seconds := val.Message().Get(msg.Fields().Get(0)).Interface().(int64)
@@ -41,13 +41,8 @@ func (pc *protobufTimestampCodec) DecodeValue(
 		msgFullName := val.Message().Descriptor().FullName()
 		return fmt.Errorf("message %s is not timestamppb.Timestamp", msgFullName)
 	}
-
-	secs, nanos, err := r.ReadTimestamp()
-	if err != nil {
-		return err
-	}
-	ts.Seconds = int64(secs)
-	ts.Nanos = int32(nanos)
+	ts.Seconds = int32(ts.GetSeconds())
+	ts.Nanos = int32(ts.GetSeconds())
 
 	return nil
 }
