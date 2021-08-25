@@ -2,6 +2,7 @@ package codec
 
 import (
 	"fmt"
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"reflect"
 	"sync"
 
@@ -62,6 +63,16 @@ func (r *CodecsRegistry) GetCodec(typeName string) (ProtoValueCodec, bool) {
 	defer r.RUnlock()
 	codec, ok := r.registry[typeName]
 	return codec, ok
+}
+
+func (r *CodecsRegistry) GetCodecByBSONType(t bsontype.Type) ProtoValueCodec {
+	switch t {
+	case bsontype.Array:
+		return r.registry[ProtobufKindList]
+	case bsontype.EmbeddedDocument:
+		return r.registry[ProtobufKindList]
+	}
+	return nil
 }
 
 // GetCodecByField основываясь на типе поля, возвращает подходящий кодек, если

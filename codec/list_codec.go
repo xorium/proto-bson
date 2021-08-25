@@ -2,6 +2,8 @@ package codec
 
 import (
 	"fmt"
+	"go.uber.org/zap"
+	"io"
 	"log"
 	"reflect"
 
@@ -30,7 +32,7 @@ func (pc *protobufListCodec) EncodeValue(
 	}
 	defer func() {
 		if err = writer.WriteArrayEnd(); err != nil {
-			panic(err)
+			Logger.Error("can't ending writing some BSON array", zap.Error(err))
 		}
 	}()
 
@@ -67,54 +69,52 @@ func (pc *protobufListCodec) EncodeValue(
 	return nil
 }
 
+
 func (pc *protobufListCodec) DecodeValue(
-	ctx bsoncodec.DecodeContext, r bsonrw.ValueReader, val protoreflect.Value,
+	ctx bsoncodec.DecodeContext, r bsonrw.DocumentReader, val protoreflect.Value,
 ) error {
-	reader, err := r.ReadArray()
-	if err != nil {
-		return err
-	}
-
-	listValue := val.List()
-	if !listValue.IsValid() {
-		return fmt.Errorf("list value %v is invalid", val)
-	}
-
 	for {
-		valueReader, err := reader.ReadValue()
-		if err != nil && err != bsonrw.ErrEOA || valueReader == nil || valueReader.Type() == 0 {
-			readerType := "unknown"
-			if valueReader != nil {
-				readerType = valueReader.Type().String()
-			}
-			log.Printf(
-				"Can't read list element value, valReader.Type()=%v, err=%v.\n",
-				readerType, err,
-			)
+		elemName, valueReader, err := r.ReadElement()
+		valueReader.
+		if err != nil {
+			if err != bsonrw.ErrEOA
 		}
-		if err == bsonrw.ErrEOA {
-			break
-		} else if err != nil {
+		reader, err := r.ReadArray()
+		if err != nil {
 			return err
 		}
 
-		listItem := listValue.NewElement()
-		codec, ok := pc.registry.GetCodecByValue(listItem)
-		if ok {
-			if err = codec.DecodeValue(ctx, valueReader, listItem); err != nil {
-				return err
-			}
-		} else {
-			basicValType := reflect.TypeOf(listItem.Interface())
-			basicValue, err := pc.registry.BasicCodec.DecodeValue(ctx, valueReader, basicValType)
-			if err != nil {
-				log.Println("Can't decode value", basicValue)
-				continue
-			}
-			listItem = protoreflect.ValueOf(basicValue)
+		listValue := val.List()
+		if !listValue.IsValid() {
+			return fmt.Errorf("list value %v is invalid", val)
 		}
 
-		listValue.Append(listItem)
+		for listValue.IsValid() {
+			valueReader, err := reader.ReadValue()
+			switch err {
+			case nil:
+			case bsonrw.ErrEOA, bsonrw.ErrEOD, io.EOF:
+				return nil
+			default:
+				log.Println("Can't read list element value, err=%", err)
+			}
+			listItem := listValue.NewElement()
+			codec, ok := pc.registry.GetCodecByValue(listItem)
+			if ok {
+				if err = codec.DecodeValue(ctx, valueReader, listItem); err != nil {
+					return err
+				}
+			} else {
+				basicValType := reflect.TypeOf(listItem.Interface())
+				basicValue, err := pc.registry.BasicCodec.DecodeValue(ctx, valueReader, basicValType)
+				if err != nil {
+					log.Println("Can't decode value", basicValue)
+					continue
+				}
+				listItem = protoreflect.ValueOf(basicValue)
+			}
+			listValue.Append(listItem)
+		}
 	}
 
 	return nil

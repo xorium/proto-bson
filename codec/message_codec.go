@@ -1,16 +1,49 @@
 package codec
 
 import (
-	"fmt"
-	"log"
+	"bytes"
 	"reflect"
 
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"go.uber.org/zap"
+
+	pref "google.golang.org/protobuf/reflect/protoreflect"
 
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/bson/bsonrw"
 	"google.golang.org/protobuf/proto"
 )
+
+func EncodeDocument(doc interface{}) ([]byte, error) {
+	bsonBuf := bytes.NewBuffer(nil)
+	writer, err := bsonrw.NewBSONValueWriter(bsonBuf)
+	if err != nil {
+		return nil, err
+	}
+	docWriter, err := writer.WriteDocument()
+	if err != nil {
+		return nil, err
+	}
+	pc := NewProtobufMongoCodec()
+	if err := pc.EncodeValue(DefaultEncContext, docWriter, reflect.ValueOf(doc)); err != nil {
+		return nil, err
+	}
+	return bsonBuf.Bytes(), nil
+}
+
+func DecodeDocument(doc interface{}) (err error) {
+	bsonBytes, err := EncodeDocument(doc)
+	if err != nil {
+		return err
+	}
+
+	reader := bsonrw.NewBSONDocumentReader(bsonBytes)
+	pc := NewProtobufMongoCodec()
+	err = pc.DecodeValue(DefaultDecContext, reader, reflect.ValueOf(doc))
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 // protobufMessageCodec кодек для сообщений Protobuf'а.
 type protobufMessageCodec struct {
@@ -23,12 +56,12 @@ func newProtobufMessageCodec(r *CodecsRegistry) *protobufMessageCodec {
 	}
 }
 
-func (pc *protobufMessageCodec) fieldKey(field protoreflect.FieldDescriptor) string {
-	return fmt.Sprintf("%d", field.Number())
+func (pc *protobufMessageCodec) fieldKey(field pref.FieldDescriptor) string {
+	return string(field.Name())
 }
 
-func (pc *protobufMessageCodec) getMessageFields(msg proto.Message) map[string]protoreflect.FieldDescriptor {
-	fields := make(map[string]protoreflect.FieldDescriptor)
+func (pc *protobufMessageCodec) getMessageFields(msg proto.Message) map[string]pref.FieldDescriptor {
+	fields := make(map[string]pref.FieldDescriptor)
 	reflectMessage := msg.ProtoReflect()
 	msgDescriptor := reflectMessage.Descriptor()
 
@@ -55,7 +88,7 @@ func (pc *protobufMessageCodec) getMessageFields(msg proto.Message) map[string]p
 }
 
 func (pc *protobufMessageCodec) EncodeValue(
-	ctx bsoncodec.EncodeContext, w bsonrw.ValueWriter, val protoreflect.Value,
+	ctx bsoncodec.EncodeContext, w bsonrw.ValueWriter, val pref.Value,
 ) error {
 	msg := val.Message().Interface()
 	reflectMsg := msg.ProtoReflect()
@@ -64,6 +97,7 @@ func (pc *protobufMessageCodec) EncodeValue(
 	if err != nil {
 		return err
 	}
+	func() { _ = dw.WriteDocumentEnd() }()
 
 	for _, field := range pc.getMessageFields(msg) {
 		value := reflectMsg.Get(field)
@@ -84,12 +118,11 @@ func (pc *protobufMessageCodec) EncodeValue(
 			return err
 		}
 	}
-
-	return dw.WriteDocumentEnd()
+	return nil
 }
 
-func (pc *protobufMessageCodec) getAllMessageFields(msg proto.Message) map[string]protoreflect.FieldDescriptor {
-	fields := make(map[string]protoreflect.FieldDescriptor)
+func (pc *protobufMessageCodec) getAllMessageFields(msg proto.Message) map[string]pref.FieldDescriptor {
+	fields := make(map[string]pref.FieldDescriptor)
 	reflectMessage := msg.ProtoReflect()
 	msgDescriptor := reflectMessage.Descriptor()
 
@@ -103,54 +136,69 @@ func (pc *protobufMessageCodec) getAllMessageFields(msg proto.Message) map[strin
 }
 
 func (pc *protobufMessageCodec) DecodeValue(
-	ctx bsoncodec.DecodeContext, r bsonrw.ValueReader, val protoreflect.Value,
+	ctx bsoncodec.DecodeContext, r bsonrw.ValueReader, val pref.Value,
 ) error {
+	Logger.Debug("Start decoding into message document", zap.Field{Key: "main"})
+
 	msg := val.Message().Interface()
 	reflectMsg := msg.ProtoReflect()
+	msgFieldsMap := pc.getAllMessageFields(msg)
+	msgName := string(reflectMsg.Descriptor().FullName())
 
+	Logger.Debug(
+		"Starting iteration over all msg fields",
+		zap.Field{Key: "MSG", Interface: msg},
+	)
 	docReader, err := r.ReadDocument()
 	if err != nil {
 		return err
 	}
 
-	msgFieldsMap := pc.getAllMessageFields(msg)
-
 	for {
 		strKey, valueReader, err := docReader.ReadElement()
-		fmt.Printf("[msg] reading '%s' field err <%v>.\n", strKey, err)
-		if err == bsonrw.ErrEOD {
+		if err != bsonrw.ErrEOD && err != nil {
 			break
-		} else if err != nil {
-			return err
 		}
-
-		field, ok := msgFieldsMap[strKey]
+		var field, ok = msgFieldsMap[strKey]
 		if !ok {
-			log.Printf(
-				"Can't find field %s of %s.\n",
-				strKey, reflectMsg.Descriptor().FullName(),
+			Logger.Debug(
+				"Can't find field for such bson key", zap.String("msg", msgName),
+				zap.String("key", strKey),
 			)
 			continue
 		}
+		Logger.Debug("Stopping iteration cause of OEF err.", zap.String("Object key", strKey))
 
+		// Получение очередного поля документа.
+		field, ok = msgFieldsMap[strKey]
+		fieldName := string(field.FullName())
+		if !ok {
+			Logger.Warn("Can't get field by name.", zap.String("Msg", msgName), zap.String("fieldKey", strKey))
+			continue
+		}
+		// Поиск кодека и приведение значения.
 		codec, ok := pc.registry.GetCodecByField(field)
 		value := reflectMsg.NewField(field)
+		// Если кодек был найдет, то испоьзуется он, иначе - кодек для базовых типов.
 		if ok {
-			err := codec.DecodeValue(ctx, valueReader, value)
+			Logger.Debug("Found special codec for field ", zap.String("field", fieldName))
+			err = codec.DecodeValue(ctx, valueReader, value)
 			if err != nil {
-				return err
+				Logger.Error("Can't save value into field.", zap.String("field", fieldName), zap.Any("valueReader", valueReader), zap.Error(err))
+				continue
 			}
 		} else {
+			Logger.Info("Found basic codec for field ", zap.String("field", fieldName), zap.Any("value", value.Interface()), zap.Reflect("valType", reflect.TypeOf(value.Interface())))
 			basicValType := reflect.TypeOf(value.Interface())
 			basicVal, err := pc.registry.BasicCodec.DecodeValue(ctx, valueReader, basicValType)
-			if err != nil {
-				return err
-			}
-			value = protoreflect.ValueOf(basicVal)
-		}
 
+			if err != nil {
+				Logger.Error("Can't save value into field.", zap.String("field", fieldName), zap.Any("valueReader", valueReader), zap.Error(err))
+				continue
+			}
+			value = pref.ValueOf(basicVal)
+		}
 		reflectMsg.Set(field, value)
 	}
-
 	return nil
 }

@@ -3,6 +3,7 @@ package codec
 import (
 	"encoding/json"
 	"fmt"
+	"go.uber.org/zap"
 	"log"
 	"reflect"
 	"strconv"
@@ -71,21 +72,21 @@ func (pc *protobufMapCodec) encodeMapKey(key protoreflect.MapKey) (string, error
 	return fmt.Sprintf("%s%s%d", string(keyData), pc.keysDelimiter, keyReflectKindCode), nil
 }
 
-func (pc *protobufMapCodec) decodeMapKey(strKey string) (protoreflect.MapKey, error) {
+func (pc *protobufMapCodec) decodeMapKey(strKey string) protoreflect.MapKey {
 	// Разбиваем данные ключа на части - в левой будет сам JSON сериализованный
 	// ключ, а в правой - идентификатор типа значения данного ключа.
 	delimiterIndex := strings.LastIndex(strKey, pc.keysDelimiter)
 	// Если разделитель не найден, значит ключ изначально был в строковом виде,
 	// его не нужно приводить и можно вернуть в таком виде.
 	if delimiterIndex == -1 {
-		return protoreflect.ValueOf(strKey).MapKey(), nil
+		return protoreflect.ValueOf(strKey).MapKey()
 	}
 	keyData := strKey[:delimiterIndex]
 	keyReflectKindCode, err := strconv.Atoi(strKey[delimiterIndex+1:])
 	// Если идентификатор типа не распарсился, значит ключ изначально был в другом
 	// - в строковом формате - можно вернуть его, как есть.
 	if err != nil {
-		return protoreflect.ValueOf(strKey).MapKey(), nil
+		return protoreflect.ValueOf(strKey).MapKey()
 	}
 
 	keyType := basicReflectTypesByKind[reflect.Kind(keyReflectKindCode)]
@@ -93,26 +94,15 @@ func (pc *protobufMapCodec) decodeMapKey(strKey string) (protoreflect.MapKey, er
 	// Если произошла ошибка при анмаршалинге, значит ключ изначально был в строковом
 	// значении - возвращаем его, как есть.
 	if err := json.Unmarshal([]byte(keyData), key.Interface()); err != nil {
-		return protoreflect.ValueOf(strKey).MapKey(), nil
+		return protoreflect.ValueOf(strKey).MapKey()
 	}
 
-	return protoreflect.ValueOf(key.Elem().Interface()).MapKey(), nil
+	return protoreflect.ValueOf(key.Elem().Interface()).MapKey()
 }
 
 func (pc *protobufMapCodec) EncodeValue(
-	ctx bsoncodec.EncodeContext, w bsonrw.ValueWriter, val protoreflect.Value,
+	ctx bsoncodec.EncodeContext, docMap bsonrw.DocumentWriter, val protoreflect.Value,
 ) error {
-	writer, err := w.WriteDocument()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err = writer.WriteDocumentEnd()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
 	mapValue := val.Map()
 	if !mapValue.IsValid() {
 		return fmt.Errorf("map value is invalid: %v", mapValue)
@@ -124,7 +114,7 @@ func (pc *protobufMapCodec) EncodeValue(
 			log.Println("Can't encode key", key)
 			return false
 		}
-		valueWriter, err := writer.WriteDocumentElement(strKey)
+		valueWriter, err := docMap.WriteDocumentElement(strKey)
 		if err != nil {
 			log.Println("Can't write document element by key", strKey)
 			return false
@@ -132,7 +122,7 @@ func (pc *protobufMapCodec) EncodeValue(
 
 		codec, ok := pc.registry.GetCodecByValue(value)
 		if ok {
-			err = codec.EncodeValue(ctx, valueWriter, value)
+			err = codec.EncodeValue(ctx, docMap, value)
 		} else {
 			err = pc.registry.BasicCodec.EncodeValue(ctx, valueWriter, value)
 		}
@@ -148,42 +138,33 @@ func (pc *protobufMapCodec) EncodeValue(
 }
 
 func (pc *protobufMapCodec) DecodeValue(
-	ctx bsoncodec.DecodeContext, r bsonrw.ValueReader, val protoreflect.Value,
+	ctx bsoncodec.DecodeContext, mapReader bsonrw.DocumentReader, val protoreflect.Value,
 ) error {
-	reader, err := r.ReadDocument()
-	if err != nil {
-		return err
-	}
-
 	mapValue := val.Map()
 	if !mapValue.IsValid() {
 		return fmt.Errorf("map value is invalid: %v", mapValue)
 	}
 
 	for {
-		strKey, valueReader, err := reader.ReadElement()
-		fmt.Printf("[map] reading `%s` key err <%v>\n", strKey, err)
-		if err == bsonrw.ErrEOD {
-			break
-		} else if err != nil {
-			return err
-		}
-
-		value := mapValue.NewValue()
-		mapKey, err := pc.decodeMapKey(strKey)
+		strKey, valueReader, err := mapReader.ReadElement()
+		Logger.Info("From Proto map to BSON doc iteration",
+			zap.Error(err),
+			zap.String("key", strKey))
 		if err != nil {
-			log.Printf("Error while decoding key %s: %v.\n", strKey, err)
-			continue
+			break
 		}
 
-		value = mapValue.NewValue()
+		mapKey := pc.decodeMapKey(strKey)
+		value := mapValue.NewValue()
 		codec, ok := pc.registry.GetCodecByValue(value)
+		// Если нашли кодек для нужного типа значения мапы, то используем его.
 		if ok {
 			if err = codec.DecodeValue(ctx, valueReader, value); err != nil {
 				log.Println("Can't decode value", value)
 				continue
 			}
 		} else {
+			// Иначе - исползуем стандартный кодеровщик базовых типов.
 			basicValType := reflect.TypeOf(value.Interface())
 			basicValue, err := pc.registry.BasicCodec.DecodeValue(ctx, valueReader, basicValType)
 			if err != nil {
